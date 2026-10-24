@@ -1,0 +1,74 @@
+name: Python CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: flake8 app tests
+
+      - name: Test with coverage gate
+        run: |
+          pytest --junitxml=reports/junit.xml \
+            --cov=app --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage.xml \
+            --cov-report=html:reports/htmlcov \
+            --cov-fail-under=90
+
+      - name: Coverage summary in job page
+        if: always()
+        run: |
+          {
+            echo "### Coverage (Python ${{ matrix.python-version }})"
+            echo '```'
+            python -m coverage report
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-reports-${{ matrix.python-version }}
+          path: reports/
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Package application
+        run: tar czf app-${{ github.sha }}.tar.gz app requirements.txt
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-package
+          path: app-${{ github.sha }}.tar.gz
