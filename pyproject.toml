@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "calc-ci-demo"
+version = "1.1.0"
+description = "Calculator demo used for CI and artifact lessons"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
