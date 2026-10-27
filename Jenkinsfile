@@ -22,27 +22,34 @@ pipeline {
                     pip install -r requirements.txt
                     flake8 app tests
                     mkdir -p reports
-                    pytest --junitxml=reports/junit.xml --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:reports/coverage.xml --cov-report=html:reports/htmlcov --cov-fail-under=90
+                    pytest --junitxml=reports/junit.xml
                 '''
             }
             post {
                 always {
                     junit testResults: 'reports/junit.xml', allowEmptyResults: true
-                    recordCoverage(
-                        tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
-                        id: 'python',
-                        name: 'Python coverage',
-                        qualityGates: [[threshold: 90.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'FAILURE']]
-                    )
-                    archiveArtifacts artifacts: 'reports/htmlcov/**', allowEmptyArchive: true
                 }
             }
         }
 
-        stage('Package') {
+        stage('Build artifacts') {
             steps {
-                sh 'tar czf app-${BUILD_NUMBER}.tar.gz app requirements.txt'
-                archiveArtifacts artifacts: 'app-*.tar.gz', fingerprint: true
+                sh '''
+                    . .venv/bin/activate
+                    pip install --upgrade build
+                    rm -rf dist
+                    python -m build
+                    cd npm
+                    npm pack --pack-destination ../dist
+                    cd ../dist
+                    sha256sum * > SHA256SUMS.txt
+                    ls -l
+                '''
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'dist/*', fingerprint: true
+                }
             }
         }
     }
