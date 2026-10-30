@@ -1,0 +1,15 @@
+pyproject.toml
+app/__init__.py
+app/calculator.py
+app/converter.py
+app/main.py
+app/web.py
+calc_ci_demo.egg-info/PKG-INFO
+calc_ci_demo.egg-info/SOURCES.txt
+calc_ci_demo.egg-info/dependency_links.txt
+calc_ci_demo.egg-info/requires.txt
+calc_ci_demo.egg-info/top_level.txt
+tests/test_calculator.py
+tests/test_converter.py
+tests/test_main.py
+tests/test_web.py

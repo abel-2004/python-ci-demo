@@ -1,0 +1,3 @@
+753d747e8468141ba91b5853d7260b8296e3bd7b00b27480fcddd0c43e9ceb50  calc_ci_demo-1.1.0-py3-none-any.whl
+df025c5d96fbc13dd9b700cf271f330d7294276d9202b821bcbbc231ff055514  calc_ci_demo-1.1.0.tar.gz
+c0aee877c96a75bdc107542f4f3178b86bd3d00050dc0ec6278f2e32f8ae2db7  calc-ci-demo-js-1.1.0.tgz
