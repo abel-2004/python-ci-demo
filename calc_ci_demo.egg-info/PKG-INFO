@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: calc-ci-demo
+Version: 1.2.0
+Summary: Calculator demo used for CI, artifacts, and deployment lessons
+Requires-Python: >=3.11
+Requires-Dist: flask<4,>=3.0
+Requires-Dist: gunicorn<23,>=22
