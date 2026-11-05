@@ -1,4 +1,4 @@
-name: Release
+name: Python Release and AWS Deploy
 
 on:
   push:
@@ -28,20 +28,11 @@ jobs:
       - name: Test before publishing
         run: pytest
 
-      - name: Check versions match tag
+      - name: Check version matches tag
         run: ./scripts/check_version.sh "$GITHUB_REF_NAME"
 
       - name: Build wheel and sdist
         run: python -m build
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Pack npm tarball
-        run: npm pack --pack-destination ../dist
-        working-directory: npm
 
       - name: Write checksums
         working-directory: dist
@@ -69,3 +60,32 @@ jobs:
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  deploy-aws:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: aws-free
+    steps:
+      - name: Checkout (for the smoke test script)
+        uses: actions/checkout@v4
+
+      - name: Create Elastic Beanstalk bundle that pins the released wheel
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          printf '%s\n' "calc-ci-demo @ https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/calc_ci_demo-${VERSION}-py3-none-any.whl" > requirements.txt
+          printf '%s\n' "from app.web import app as application" > application.py
+          zip bundle-aws.zip requirements.txt application.py
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ vars.AWS_REGION }}
+          application_name: calc-py-app
+          environment_name: calc-py-env
+          version_label: ${{ github.ref_name }}
+          deployment_package: bundle-aws.zip
+
+      - name: Smoke test the AWS environment
+        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_PY_URL }}" "${GITHUB_REF_NAME#v}" 20
