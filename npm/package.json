@@ -1,6 +1,6 @@
 {
   "name": "calc-ci-demo-js",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Calculator helpers packaged as an npm artifact",
   "main": "index.js",
   "files": ["index.js", "README.md"],
