@@ -89,4 +89,4 @@ jobs:
           existing_bucket_name: elasticbeanstalk-ap-southeast-2-932061466898 
 
       - name: Smoke test the AWS environment
-        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_PY_URL }}" "${GITHUB_REF_NAME#v}" 20
+        run: ./scripts/smoke_test.sh "${{ vars.AWS_PY_URL }}" "${GITHUB_REF_NAME#v}" 20
