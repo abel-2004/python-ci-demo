@@ -82,8 +82,8 @@ jobs:
           aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           region: ${{ vars.AWS_REGION }}
-          application_name: calc-py-app
-          environment_name: calc-py-env
+          application_name: calc-new-python-app
+          environment_name: Calc-new-python-app-env
           version_label: ${{ github.ref_name }}
           deployment_package: bundle-aws.zip
           existing_bucket_name: elasticbeanstalk-ap-southeast-2-932061466898 
