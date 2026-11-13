@@ -5,3 +5,6 @@ __pycache__/
 coverage.xml
 reports/
 *.tar.gz
+
+# Python build artifacts
+dist/
