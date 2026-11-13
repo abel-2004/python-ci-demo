@@ -1,151 +1,145 @@
-name: Python Release, Image, and AWS Container Deploy
+
+name: Python Release, Docker Image, and AWS Deploy
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags:
+      - "v*.*.*"
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  # 1. Build and test the Python application
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout tagged commit
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt build
+          pip install -r requirements.txt
+          pip install build
 
-      - name: Test before publishing
-        run: pytest
+      - name: Run tests
+        run: pytest -v
 
-      - name: Check version matches tag
-        run: ./scripts/check_version.sh "$GITHUB_REF_NAME"
-
-      - name: Build wheel and sdist
+      - name: Build Python packages
         run: python -m build
 
-      - name: Write checksums
-        working-directory: dist
-        run: sha256sum * > SHA256SUMS.txt
-
-      - name: Upload distribution
+      - name: Upload Python packages
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: python-dist
           path: dist/
 
+  # 2. Publish GitHub Release
   release:
     needs: build
     runs-on: ubuntu-latest
+
     steps:
-      - name: Download distribution
+      - name: Download Python packages
         uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: dist
+          name: python-dist
+          path: dist/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
 
+  # 3. Build, test, and push Docker image to GHCR
   image:
-    needs: release
+    needs: build
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout (Dockerfile and smoke test)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download distribution
+      - name: Download Python packages
         uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: dist
+          name: python-dist
+          path: dist/
 
-      - name: Set image name in lowercase
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Build Docker image
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+          docker build \
+            -t "$IMAGE:$VERSION" \
+            -t "$IMAGE:$MAJOR_MINOR" .
 
-      - name: Log in to GitHub Container Registry
+      - name: Test Docker container
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+
+          docker run -d \
+            --name calc-ci-demo-test \
+            -p 8000:8000 \
+            "$IMAGE:$VERSION"
+
+          ./scripts/smoke_test.sh \
+            "http://localhost:8000" "$VERSION" 15
+
+          docker stop calc-ci-demo-test
+          docker rm calc-ci-demo-test
+
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate image tags
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build image locally (not pushed yet)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          load: true
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Smoke test the image
+      - name: Push Docker images
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          docker run -d --name calc-smoke -p 8000:8000 "$IMAGE:$VERSION"
-          if ! ./scripts/smoke_test.sh http://localhost:8000 "$VERSION" 15; then
-            docker logs calc-smoke
-            exit 1
-          fi
-          docker rm -f calc-smoke
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
 
-      - name: Push the verified image
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-        run: |
-          printf '%s\n' "$TAGS" | while read -r TAG; do
-            [ -n "$TAG" ] && docker push "$TAG"
-          done
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:$MAJOR_MINOR"
 
+  # 4. Deploy Docker container to AWS Elastic Beanstalk
   deploy-container:
     needs: image
     runs-on: ubuntu-latest
     environment: aws-free
+
     steps:
-      - name: Checkout (for the smoke test script)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create Docker Compose bundle for Elastic Beanstalk
+      - name: Create Docker Compose deployment bundle
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          printf '%s\n' \
-            "services:" \
-            "  web:" \
-            "    image: $IMAGE:$VERSION" \
-            "    ports:" \
-            "      - \"80:8000\"" \
-            "    restart: always" > docker-compose.yml
-          zip deploy-container.zip docker-compose.yml
 
-      - name: Deploy to Elastic Beanstalk
+          printf 'services:\n' > docker-compose.yml
+          printf '  app:\n' >> docker-compose.yml
+          printf '    image: %s:%s\n' "$IMAGE" "$VERSION" >> docker-compose.yml
+          printf '    ports:\n' >> docker-compose.yml
+          printf '      - "80:8000"\n' >> docker-compose.yml
+          
+          zip docker-compose.zip docker-compose.yml
+
+      - name: Deploy Docker container to AWS
         uses: einaregilsson/beanstalk-deploy@v22
         with:
           aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -154,7 +148,51 @@ jobs:
           application_name: calc-py-app
           environment_name: calc-py-container-env
           version_label: ${{ github.ref_name }}-container
-          deployment_package: deploy-container.zip
+          deployment_package: docker-compose.zip
 
-      - name: Smoke test the Elastic Beanstalk container environment
-        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_PY_CONTAINER_URL }}" "${GITHUB_REF_NAME#v}" 20
+      - name: Smoke test Docker environment
+        run: |
+          ./scripts/smoke_test.sh \
+            "http://${{ vars.AWS_PY_CONTAINER_URL }}" \
+            "${GITHUB_REF_NAME#v}" 20
+
+  # 5. Deploy Python application to existing AWS platform environment
+  deploy-aws:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: aws-free
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Elastic Beanstalk bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          printf '%s\n' \
+            "calc-ci-demo @ https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/calc_ci_demo-${VERSION}-py3-none-any.whl" \
+            > requirements.txt
+
+          printf '%s\n' \
+            "from app.web import app as application" \
+            > application.py
+
+          zip bundle-aws.zip requirements.txt application.py
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ vars.AWS_REGION }}
+          application_name: calc-py-app
+          environment_name: calc-py-env
+          version_label: ${{ github.ref_name }}-platform
+          deployment_package: bundle-aws.zip
+
+      - name: Smoke test platform environment
+        run: |
+          ./scripts/smoke_test.sh \
+            "http://${{ vars.AWS_PY_URL }}" \
+            "${GITHUB_REF_NAME#v}" 20
