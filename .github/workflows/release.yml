@@ -152,7 +152,7 @@ jobs:
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           region: ${{ vars.AWS_REGION }}
           application_name: calc-py-app
-          environment_name: calc-py-container-env
+          environment_name: calc-py-containers-env
           version_label: ${{ github.ref_name }}-container
           deployment_package: deploy-container.zip
 
